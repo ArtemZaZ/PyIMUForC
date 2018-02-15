@@ -1,0 +1,1 @@
+/usr/bin/cc -g   CMakeFiles/PyIMUModuleForC.dir/main.c.o CMakeFiles/PyIMUModuleForC.dir/IMUlib.c.o CMakeFiles/PyIMUModuleForC.dir/PyIMU.c.o  -o PyIMUModuleForC 
