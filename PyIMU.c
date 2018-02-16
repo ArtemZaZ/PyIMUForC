@@ -4,6 +4,67 @@
 
 #include "PyIMU.h"
 
+int openI2Cport(int port)
+{
+    char path[MAXPATH];
+    if(snprintf(path, MAXPATH, "/dev/i2c-%d", port) >= MAXPATH)
+    {
+        // Вызвать ошибку
+        return -1;
+    }
+    if((port = open(path, O_RDWR)) < 0)
+    {
+        // Вызвать ошибку
+        return -1;
+    }
+    return port;
+}
+
+int closeI2Cport(int port)
+{
+    if((port != -1) && (close(port) == -1))
+    {
+        //Вызвать ошибку
+        return -1;
+    }
+    return 0;
+}
+
+int setSlaveAdress(int port, int addr)
+{
+    if((ioctl(port, I2C_SLAVE), addr) < 0)
+    {
+        //Вызвать ошибку
+        return -1;
+    }
+    return 0;
+}
+
+void initMPU6050(int port)
+{
+    i2c_smbus_write_byte_data(port, PWR_MGMT_1, 0x00);
+    i2c_smbus_write_byte_data(port, GYRO_CONFIG, 0x00);
+    i2c_smbus_write_byte_data(port, ACCEL_CONFIG, 0x00);
+}
+
+uint8_t* readMPU6050Data(int port)
+{
+    union i2c_smbus_data rawdata;
+    rawdata.block[0] = 12;
+    uint8_t data[6];
+    setSlaveAdress(port, MPU6050_ADRESS);
+    i2c_smbus_access(port, I2C_SMBUS_READ, ACCEL_XOUT_H, I2C_SMBUS_BLOCK_DATA, &rawdata);
+    data[0] = rawdata.block[1] << 8 | rawdata.block[2];
+    data[1] = rawdata.block[3] << 8 | rawdata.block[4];
+    data[2] = rawdata.block[5] << 8 | rawdata.block[6];
+
+    data[3] = rawdata.block[7] << 8 | rawdata.block[8];
+    data[4] = rawdata.block[9] << 8 | rawdata.block[10];
+    data[5] = rawdata.block[11] << 8 | rawdata.block[12];
+
+    return data;
+}
+
 static void MFilter_dealloc(PyMFilterObject* self)      // Деструктор
 {
     Py_TYPE(self)->tp_free((PyObject*)self);
@@ -21,6 +82,7 @@ static PyObject* PyMFilter_new(PyTypeObject *type, PyObject *args, PyObject *kwd
         self -> pitch = 0.f;
         self -> roll = 0.f;
         self -> beta = 0.f;
+        self -> exit = 0;
     }
     return (PyObject*)self;
 }
@@ -53,20 +115,36 @@ static PyObject* MFilter_updateAngle(PyMFilterObject *self, PyObject *args)     
     self -> yaw = temp.x;
     self -> pitch = temp.y;
     self -> roll = temp.z;
-    return NULL;
+    return Py_None;
 }
 
 static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *args)    // бесконечный цикл проверки углов с I2C
 {
+    self -> exit = 0;
     int bus;
+    uint8_t* data;
+    float time = 0.0001;
     if(! PyArg_ParseTuple(args, "i", &bus)) return NULL;
-    /*
-     * подключение к I2C и т.д.
-     */
-    while (!Exit)
+    bus = openI2Cport(bus);
+    setSlaveAdress(bus, MPU6050_ADRESS);
+    initMPU6050(bus);
+    while (!(self -> exit))
     {
-
+        data = readMPU6050Data(bus);
+        quaternion = updateFilterIterator(quaternion, (Vector){data[0], data[1], data[2]}, (Vector){data[3], data[4], data[5]}, self->beta, time);
+        Vector temp = quatToEulerAngle(quaternion);
+        self -> yaw = temp.x;
+        self -> pitch = temp.y;
+        self -> roll = temp.z;
     }
+    closeI2Cport(bus);
+    return Py_None;
+}
+
+static PyObject* MFilter_exitInCycle(PyMFilterObject *self)
+{
+    self -> exit = 1;
+    return Py_None;
 }
 
 PyMODINIT_FUNC PyInit_PyIMU(void)

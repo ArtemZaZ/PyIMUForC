@@ -6,7 +6,7 @@
 #define PYIMUMODULEFORC_IMULIB_H
 
 #include <python3.5/Python.h>
-#include "math.h"
+#include <math.h>
 
 #define PI 3.14159265358979f
 #define G  9.80665f

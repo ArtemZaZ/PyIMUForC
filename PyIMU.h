@@ -5,14 +5,26 @@
 #ifndef PYIMUMODULEFORC_PYIMU_H
 #define PYIMUMODULEFORC_PYIMU_H
 
+#define MPU6050_ADRESS  0X68
+#define GYRO_CONFIG     0x1B
+#define ACCEL_CONFIG    0x1C
+#define PWR_MGMT_1      0x6B
+#define ACCEL_XOUT_H    0x3B
+#define MAXPATH         60
+
 #include <python3.5/Python.h>
 #include "python3.5/structmember.h"
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <linux/i2c-dev.h>
+#include <stdint.h>
 #include "IMUlib.h"
 
 static PyObject* PyIMUError;    // ошибка модуля
 
 static Quaternion quaternion = {1.f, 0.f, 0.f, 0.f};  // действующий кватернион
-static int Exit = 0;   // метка выхода из бесконечного цикла
+
 
 
 //static PyTypeObject PyMFilter_Type;   // тип данных фильтра
@@ -25,13 +37,21 @@ typedef struct                              // структура объекта
     float yaw;
     float pitch;
     float roll;
+    int exit;   // метка выхода из бесконечного цикла
 } PyMFilterObject;
+
+int openI2Cport(int port);
+int closeI2Cport(int port);
+int setSlaveAdress(int port, int addr); // установить адрес ведомого устройства
+void initMPU6050(int port);         // инициализация MPU6050
+uint8_t* readMPU6050Data(int port); // получение данных с MPU6050
 
 static void MFilter_dealloc(PyMFilterObject* self);      // Деструктор
 static PyObject* PyMFilter_new(PyTypeObject *type, PyObject *args, PyObject *kwds);     // создает новый динамический объект и заполняет параметры
 static int MFilter_init(PyMFilterObject *self, PyObject *args);      // вызывается при вызове конструктора, args - заполняемые параметры
 static PyObject* MFilter_updateAngle(PyMFilterObject *self, PyObject *args);     // ф-ия пользовательская
 static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *args);  // бесконечный цикл проверки углов с I2C
+static PyObject* MFilter_exitInCycle(PyMFilterObject *self);        // выход из бесконечного цикла
 
 PyMODINIT_FUNC PyInit_PyIMU(void);      // ф-ия инициализации модуля
 
@@ -48,6 +68,8 @@ static PyMemberDef PyIMU_members[] =        // переменные
 static PyMethodDef PyMFilter_methods[] =        // методы
         {
                 {"updateAngle", (PyCFunction)MFilter_updateAngle, METH_VARARGS, "TempUpdateAngle"},
+                {"updateAngleInCycle", (PyCFunction)MFilter_updateAngleInCycle, METH_VARARGS, "Update angle in cycle"},
+                {"exit", (PyCFunction)MFilter_exitInCycle, METH_NOARGS, "Exit in infinity cycle"},
                 {NULL} // Sentinel
         };
 
