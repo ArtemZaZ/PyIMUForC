@@ -4,17 +4,17 @@
 
 #include "PyIMU.h"
 
-int openI2Cport(int port)
+int openI2Cport(int port)       // если ф-ии возвращают -1, то ошибка
 {
     char path[MAXPATH];
     if(snprintf(path, MAXPATH, "/dev/i2c-%d", port) >= MAXPATH)
     {
-        // Вызвать ошибку
+        PyErr_SetString(PyExc_OverflowError, "You're a liar(-_-). Bus with this number is not valid");
         return -1;
     }
     if((port = open(path, O_RDWR)) < 0)
     {
-        // Вызвать ошибку
+        PyErr_SetFromErrno(PyExc_IOError);
         return -1;
     }
     return port;
@@ -24,7 +24,7 @@ int closeI2Cport(int port)
 {
     if((port != -1) && (close(port) == -1))
     {
-        //Вызвать ошибку
+        PyErr_SetFromErrno(PyExc_IOError);
         return -1;
     }
     return 0;
@@ -32,28 +32,37 @@ int closeI2Cport(int port)
 
 int setSlaveAdress(int port, int addr)
 {
-    if((ioctl(port, I2C_SLAVE), addr) < 0)
+    if(ioctl(port, I2C_SLAVE, addr) < 0)
     {
-        //Вызвать ошибку
+        PyErr_SetString(PyExc_OSError, "Oops, what?");
         return -1;
     }
     return 0;
 }
 
-void initMPU6050(int port)
+int initMPU6050(int port)
 {
-    i2c_smbus_write_byte_data(port, PWR_MGMT_1, 0x00);
-    i2c_smbus_write_byte_data(port, GYRO_CONFIG, 0x00);
-    i2c_smbus_write_byte_data(port, ACCEL_CONFIG, 0x00);
+    if((i2c_smbus_write_byte_data(port, PWR_MGMT_1, 0x00) == -1) ||
+       (i2c_smbus_write_byte_data(port, GYRO_CONFIG, 0x00) == -1) ||
+       (i2c_smbus_write_byte_data(port, ACCEL_CONFIG, 0x00) == -1))
+    {
+        PyErr_SetString(PyExc_IOError, "Initialize problems");
+        return -1;
+    }
+    return 0;
 }
 
-uint8_t* readMPU6050Data(int port)
+int readMPU6050Data(int port, uint8_t* data)
 {
     union i2c_smbus_data rawdata;
     rawdata.block[0] = 12;
-    uint8_t data[6];
-    setSlaveAdress(port, MPU6050_ADRESS);
-    i2c_smbus_access(port, I2C_SMBUS_READ, ACCEL_XOUT_H, I2C_SMBUS_BLOCK_DATA, &rawdata);
+
+    if(setSlaveAdress(port, MPU6050_ADRESS) == -1) return NULL;
+    if(i2c_smbus_access(port, I2C_SMBUS_READ, ACCEL_XOUT_H, I2C_SMBUS_BLOCK_DATA, &rawdata))
+    {
+        PyErr_SetFromErrno(PyExc_IOError);
+        return -1;
+    }
     data[0] = rawdata.block[1] << 8 | rawdata.block[2];
     data[1] = rawdata.block[3] << 8 | rawdata.block[4];
     data[2] = rawdata.block[5] << 8 | rawdata.block[6];
@@ -62,7 +71,7 @@ uint8_t* readMPU6050Data(int port)
     data[4] = rawdata.block[9] << 8 | rawdata.block[10];
     data[5] = rawdata.block[11] << 8 | rawdata.block[12];
 
-    return data;
+    return 0;
 }
 
 static void MFilter_dealloc(PyMFilterObject* self)      // Деструктор
@@ -122,22 +131,22 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
 {
     self -> exit = 0;
     int bus;
-    uint8_t* data;
-    float time = 0.0001;
+    uint8_t data[6];
+    lastTick = clock()/CLOCKS_PER_SEC;
     if(! PyArg_ParseTuple(args, "i", &bus)) return NULL;
-    bus = openI2Cport(bus);
-    setSlaveAdress(bus, MPU6050_ADRESS);
-    initMPU6050(bus);
+    if((bus = openI2Cport(bus)) == -1) return NULL;
+    if(setSlaveAdress(bus, MPU6050_ADRESS) == -1) return NULL;
+    if(initMPU6050(bus) == -1) return NULL;
     while (!(self -> exit))
     {
-        data = readMPU6050Data(bus);
-        quaternion = updateFilterIterator(quaternion, (Vector){data[0], data[1], data[2]}, (Vector){data[3], data[4], data[5]}, self->beta, time);
+        if(readMPU6050Data(bus, data) == -1) return NULL;
+        quaternion = updateFilterIterator(quaternion, (Vector){data[0], data[1], data[2]}, (Vector){data[3], data[4], data[5]}, self->beta, (lastTick = (clock()/CLOCKS_PER_SEC - lastTick)));
         Vector temp = quatToEulerAngle(quaternion);
         self -> yaw = temp.x;
         self -> pitch = temp.y;
         self -> roll = temp.z;
     }
-    closeI2Cport(bus);
+    if(closeI2Cport(bus) == -1) return NULL;
     return Py_None;
 }
 

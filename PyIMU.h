@@ -19,12 +19,15 @@
 #include <sys/ioctl.h>
 #include <linux/i2c-dev.h>
 #include <stdint.h>
+#include <time.h>
 #include "IMUlib.h"
+
 
 static PyObject* PyIMUError;    // ошибка модуля
 
 static Quaternion quaternion = {1.f, 0.f, 0.f, 0.f};  // действующий кватернион
 
+float lastTick = 0;   // время с предыдущего вызова
 
 
 //static PyTypeObject PyMFilter_Type;   // тип данных фильтра
@@ -43,8 +46,8 @@ typedef struct                              // структура объекта
 int openI2Cport(int port);
 int closeI2Cport(int port);
 int setSlaveAdress(int port, int addr); // установить адрес ведомого устройства
-void initMPU6050(int port);         // инициализация MPU6050
-uint8_t* readMPU6050Data(int port); // получение данных с MPU6050
+int initMPU6050(int port);         // инициализация MPU6050
+int readMPU6050Data(int port, uint8_t* data); // получение данных с MPU6050
 
 static void MFilter_dealloc(PyMFilterObject* self);      // Деструктор
 static PyObject* PyMFilter_new(PyTypeObject *type, PyObject *args, PyObject *kwds);     // создает новый динамический объект и заполняет параметры
