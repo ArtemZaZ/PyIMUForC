@@ -132,11 +132,11 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
     self -> exit = 0;
     int bus;
     uint8_t data[6];
-    lastTick = clock()/CLOCKS_PER_SEC;
     if(! PyArg_ParseTuple(args, "i", &bus)) return NULL;
     if((bus = openI2Cport(bus)) == -1) return NULL;
     if(setSlaveAdress(bus, MPU6050_ADRESS) == -1) return NULL;
     if(initMPU6050(bus) == -1) return NULL;
+    lastTick = clock()/CLOCKS_PER_SEC;
     while (!(self -> exit))
     {
         if(readMPU6050Data(bus, data) == -1) return NULL;
@@ -145,6 +145,7 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
         self -> yaw = temp.x;
         self -> pitch = temp.y;
         self -> roll = temp.z;
+        usleep(UDELAY*1000);
     }
     if(closeI2Cport(bus) == -1) return NULL;
     return Py_None;

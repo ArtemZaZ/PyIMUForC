@@ -11,6 +11,7 @@
 #define PWR_MGMT_1      0x6B
 #define ACCEL_XOUT_H    0x3B
 #define MAXPATH         60
+#define UDELAY          1000
 
 #include <python3.5/Python.h>
 #include "python3.5/structmember.h"
