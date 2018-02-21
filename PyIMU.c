@@ -52,25 +52,24 @@ int initMPU6050(int port)
     return 0;
 }
 
-int readMPU6050Data(int port, uint8_t* data)
+int readMPU6050Data(int port, int32_t* data)
 {
     union i2c_smbus_data rawdata;
-    rawdata.block[0] = 12;
+    rawdata.block[0] = 14;
 
-    if(setSlaveAdress(port, MPU6050_ADRESS) == -1) return NULL;
+    if(setSlaveAdress(port, MPU6050_ADRESS) == -1) return -1;
     if(i2c_smbus_access(port, I2C_SMBUS_READ, ACCEL_XOUT_H, I2C_SMBUS_BLOCK_DATA, &rawdata))
     {
         PyErr_SetFromErrno(PyExc_IOError);
         return -1;
     }
-    data[0] = rawdata.block[1] << 8 | rawdata.block[2];
-    data[1] = rawdata.block[3] << 8 | rawdata.block[4];
-    data[2] = rawdata.block[5] << 8 | rawdata.block[6];
+    data[0] = (int32_t)(rawdata.block[1] << 8 | rawdata.block[2]);
+    data[1] = (int32_t)(rawdata.block[3] << 8 | rawdata.block[4]);
+    data[2] = (int32_t)(rawdata.block[5] << 8 | rawdata.block[6]);
 
-    data[3] = rawdata.block[7] << 8 | rawdata.block[8];
-    data[4] = rawdata.block[9] << 8 | rawdata.block[10];
-    data[5] = rawdata.block[11] << 8 | rawdata.block[12];
-
+    data[3] = (int32_t)(rawdata.block[9] << 8 | rawdata.block[10]);
+    data[4] = (int32_t)(rawdata.block[11] << 8 | rawdata.block[12]);
+    data[5] = (int32_t)(rawdata.block[13] << 8 | rawdata.block[14]);
     return 0;
 }
 
@@ -131,16 +130,25 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
 {
     self -> exit = 0;
     int bus;
-    uint8_t data[6];
+    int32_t data[6];
+    Vector a;
+    Vector w;
     if(! PyArg_ParseTuple(args, "i", &bus)) return NULL;
     if((bus = openI2Cport(bus)) == -1) return NULL;
     if(setSlaveAdress(bus, MPU6050_ADRESS) == -1) return NULL;
+    lastTick = clock();
     if(initMPU6050(bus) == -1) return NULL;
-    lastTick = clock()/CLOCKS_PER_SEC;
+    usleep(UDELAY*1000);
     while (!(self -> exit))
     {
         if(readMPU6050Data(bus, data) == -1) return NULL;
-        quaternion = updateFilterIterator(quaternion, (Vector){data[0], data[1], data[2]}, (Vector){data[3], data[4], data[5]}, self->beta, (lastTick = (clock()/CLOCKS_PER_SEC - lastTick)));
+        a.x = data[0]/A_SENSETIVE;
+        a.y = data[1]/A_SENSETIVE;
+        a.z = data[2]/A_SENSETIVE;
+        w.x = data[3]/G_SENSETIVE;
+        w.y = data[4]/G_SENSETIVE;
+        w.z = data[5]/G_SENSETIVE;
+        quaternion = updateFilterIterator(quaternion, a, w, self->beta, ((float)(lastTick = (clock()-lastTick)))/CLOCKS_PER_SEC);
         Vector temp = quatToEulerAngle(quaternion);
         self -> yaw = temp.x;
         self -> pitch = temp.y;

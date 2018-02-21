@@ -10,6 +10,8 @@
 #define ACCEL_CONFIG    0x1C
 #define PWR_MGMT_1      0x6B
 #define ACCEL_XOUT_H    0x3B
+#define A_SENSETIVE     16384.f
+#define G_SENSETIVE     131.f
 #define MAXPATH         60
 #define UDELAY          1000
 
@@ -23,12 +25,18 @@
 #include <time.h>
 #include "IMUlib.h"
 
+#ifndef I2C_SMBUS_I2C_BLOCK_BROKEN
+#undef I2C_SMBUS_I2C_BLOCK_DATA
+#define I2C_SMBUS_I2C_BLOCK_BROKEN      6
+#define I2C_SMBUS_I2C_BLOCK_DATA        8
+#endif
+
 
 static PyObject* PyIMUError;    // ошибка модуля
 
 static Quaternion quaternion = {1.f, 0.f, 0.f, 0.f};  // действующий кватернион
 
-float lastTick = 0;   // время с предыдущего вызова
+clock_t lastTick = 0;   // время с предыдущего вызова
 
 
 //static PyTypeObject PyMFilter_Type;   // тип данных фильтра
@@ -48,7 +56,7 @@ int openI2Cport(int port);
 int closeI2Cport(int port);
 int setSlaveAdress(int port, int addr); // установить адрес ведомого устройства
 int initMPU6050(int port);         // инициализация MPU6050
-int readMPU6050Data(int port, uint8_t* data); // получение данных с MPU6050
+int readMPU6050Data(int port, int32_t* data); // получение данных с MPU6050
 
 static void MFilter_dealloc(PyMFilterObject* self);      // Деструктор
 static PyObject* PyMFilter_new(PyTypeObject *type, PyObject *args, PyObject *kwds);     // создает новый динамический объект и заполняет параметры
