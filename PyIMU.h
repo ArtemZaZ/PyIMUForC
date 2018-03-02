@@ -13,7 +13,7 @@
 #define A_SENSETIVE     16384.f
 #define G_SENSETIVE     131.f
 #define MAXPATH         60
-#define UDELAY          1000
+#define UDELAY          50
 
 #include <python3.5/Python.h>
 #include "python3.5/structmember.h"
@@ -30,6 +30,7 @@
 #define I2C_SMBUS_I2C_BLOCK_BROKEN      6
 #define I2C_SMBUS_I2C_BLOCK_DATA        8
 #endif
+
 
 
 static PyObject* PyIMUError;    // ошибка модуля
@@ -65,6 +66,8 @@ static PyObject* MFilter_updateAngle(PyMFilterObject *self, PyObject *args);    
 static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *args);  // бесконечный цикл проверки углов с I2C
 static PyObject* MFilter_exitInCycle(PyMFilterObject *self);        // выход из бесконечного цикла
 
+static PyObject* MFilter_ThreadTest(PyMFilterObject *self, PyObject *args);
+
 PyMODINIT_FUNC PyInit_PyIMU(void);      // ф-ия инициализации модуля
 
 
@@ -82,6 +85,7 @@ static PyMethodDef PyMFilter_methods[] =        // методы
                 {"updateAngle", (PyCFunction)MFilter_updateAngle, METH_VARARGS, "TempUpdateAngle"},
                 {"updateAngleInCycle", (PyCFunction)MFilter_updateAngleInCycle, METH_VARARGS, "Update angle in cycle"},
                 {"exit", (PyCFunction)MFilter_exitInCycle, METH_NOARGS, "Exit in infinity cycle"},
+                {"test", (PyCFunction)MFilter_ThreadTest, METH_VARARGS, "Test threading in cpython"},
                 {NULL} // Sentinel
         };
 
@@ -131,10 +135,9 @@ static PyModuleDef PyIMUModule =        // определение модуля
         {
                 PyModuleDef_HEAD_INIT,
                 "PyIMU",
-                "Module for IMU sensor"
+                "Module for IMU sensor,"
                 -1,
-                NULL,
-                NULL, NULL, NULL, NULL
+                NULL
         };
 
 

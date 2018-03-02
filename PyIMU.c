@@ -4,6 +4,10 @@
 
 #include "PyIMU.h"
 
+static PyGILState_STATE mGilState;     // состояние GIL основного интерпретатора Python
+static PyThreadState* mThreadState;     // состояние главного потока для основного интерпретатора
+
+
 int openI2Cport(int port)       // если ф-ии возвращают -1, то ошибка
 {
     char path[MAXPATH];
@@ -128,6 +132,7 @@ static PyObject* MFilter_updateAngle(PyMFilterObject *self, PyObject *args)     
 
 static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *args)    // бесконечный цикл проверки углов с I2C
 {
+
     self -> exit = 0;
     int bus;
     int32_t data[6];
@@ -138,9 +143,11 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
     if(setSlaveAdress(bus, MPU6050_ADRESS) == -1) return NULL;
     lastTick = clock();
     if(initMPU6050(bus) == -1) return NULL;
-    usleep(UDELAY*1000);
+    usleep(1000);
     while (!(self -> exit))
     {
+        mGilState = PyGILState_Ensure();     // забираем себе GIL сразу для настройки многопоточности
+        mThreadState = PyEval_SaveThread();  // сохраняем состояние главного потока и отпускаем GIL
         if(readMPU6050Data(bus, data) == -1) return NULL;
         a.x = data[0]/A_SENSETIVE;
         a.y = data[1]/A_SENSETIVE;
@@ -154,8 +161,31 @@ static PyObject* MFilter_updateAngleInCycle(PyMFilterObject *self, PyObject *arg
         self -> pitch = temp.y;
         self -> roll = temp.z;
         usleep(UDELAY*1000);
+        PyEval_RestoreThread( mThreadState );   // восстанавливаем состояние главного потока и забираем себе GIL
+        PyGILState_Release( mGilState );        // отпускаем блокировку GIL с сохранённым состоянием
     }
     if(closeI2Cport(bus) == -1) return NULL;
+    return Py_None;
+}
+
+
+static PyObject* MFilter_ThreadTest(PyMFilterObject *self, PyObject *args)    // бесконечный цикл проверки углов с I2C
+{
+    self -> exit = 0;
+    int bus;
+    if(! PyArg_ParseTuple(args, "i", &bus)) return NULL;
+    usleep(UDELAY*1000);
+    while (!(self -> exit))
+    {
+        mGilState = PyGILState_Ensure();     // забираем себе GIL сразу для настройки многопоточности
+        mThreadState = PyEval_SaveThread();  // сохраняем состояние главного потока и отпускаем GIL
+        self -> yaw = 1.f;
+        self -> pitch =  1.f;
+        self -> roll =  1.f;
+        PyEval_RestoreThread( mThreadState );   // восстанавливаем состояние главного потока и забираем себе GIL
+        PyGILState_Release( mGilState );        // отпускаем блокировку GIL с сохранённым состоянием
+        usleep(UDELAY*1000);
+    }
     return Py_None;
 }
 
@@ -179,7 +209,7 @@ PyMODINIT_FUNC PyInit_PyIMU(void)
     PyModule_AddObject(m, "error", PyIMUError);
 
     Py_INCREF(&PyMFilter_Type);                 // добавление своего типа данных в модуль
-    PyModule_AddObject(m, "MFilter", (PyObject *)&PyMFilter_Type);
+    PyModule_AddObject(m, "MFilter", (PyObject*)&PyMFilter_Type);
     return m;
 }
 
@@ -197,6 +227,10 @@ int main(int argc, char *argv[])
     Py_SetProgramName(program);
     /*инициализируем интерпретатор питона*/
     Py_Initialize();
+
+    PyEval_InitThreads();   // инициализация потоков в Python и механизма GIL
+    //mGilState = PyGILState_Ensure();     // забираем себе GIL сразу для настройки многопоточности
+
     /*опционально - импортируем модуль? модуль может импортировать также внешний скрипт*/
     PyImport_ImportModule("PyIMU");
     PyMem_RawFree(program);
